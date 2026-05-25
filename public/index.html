@@ -20,6 +20,24 @@
     .bg-gold { background-color: #c8972e; }
     .bg-gold-hover:hover { background-color: #b08225; }
     .focus-gold:focus { outline-color: #c8972e; }
+
+    /* Slower, Dramatic Splash Screen Keyframe animations */
+    @keyframes slowZoom {
+      0% { transform: scale(1.0); }
+      100% { transform: scale(1.05); }
+    }
+    @keyframes fadeInAfterHold {
+      0% { opacity: 0; transform: translateY(10px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+    .animate-zoom {
+      animation: slowZoom 6.5s ease-in-out forwards;
+    }
+    .animate-fade-in-delayed {
+      animation: fadeInAfterHold 1.5s ease-in-out forwards;
+      animation-delay: 1.0s;
+      opacity: 0;
+    }
   </style>
 </head>
 <body class="bg-gray-50 text-gray-900 font-sans">
@@ -50,15 +68,15 @@
       const [splashFade, setSplashFade] = useState(false);
 
       useEffect(() => {
-        // Trigger fade out at 2.5s
+        // Trigger fade out at 4.0s
         const fadeTimer = setTimeout(() => {
           setSplashFade(true);
-        }, 2500);
+        }, 4000);
 
-        // Remove splash completely at 3.5s
+        // Remove splash completely at 6.5s (4s hold + 2.5s fade out)
         const removeTimer = setTimeout(() => {
           setShowSplash(false);
-        }, 3500);
+        }, 6500);
 
         return () => {
           clearTimeout(fadeTimer);
@@ -269,13 +287,15 @@
 
       return (
         <div class="min-h-screen flex flex-col">
-          {/* Splash Screen */}
+          {/* Slower, Dramatic Fullscreen Splash Screen Overlay */}
           {showSplash && (
-            <div class={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950 transition-opacity duration-1000 ${splashFade ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
-              <img src="images/watchpost-hero.png" alt="WatchPost - Protection You Can Trust" class="w-full h-full object-cover absolute inset-0" />
+            <div class={`fixed inset-0 z-50 flex items-center justify-center bg-slate-950 transition-opacity duration-[2500ms] ease-in-out ${splashFade ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+              <img src="images/watchpost-hero.png" alt="WatchPost" class="w-full h-full object-cover absolute inset-0 animate-zoom" />
               <div class="absolute inset-0 bg-[#0d131f]/75 flex flex-col items-center justify-center p-4 text-center">
-                <img src="images/watchpost-logo.png" alt="WatchPost Logo" class="h-28 object-contain mb-4 animate-pulse" />
-                <p class="text-[#c8972e] font-black uppercase tracking-widest text-lg sm:text-2xl mt-2 drop-shadow-md">Protection You Can Trust</p>
+                <div class="animate-fade-in-delayed flex flex-col items-center justify-center">
+                  <img src="images/watchpost-logo.png" alt="WatchPost Logo" class="h-28 object-contain mb-4" />
+                  <p class="text-[#c8972e] font-black uppercase tracking-widest text-lg sm:text-2xl mt-2 drop-shadow-md">Protection You Can Trust</p>
+                </div>
               </div>
             </div>
           )}
@@ -505,7 +525,7 @@
                         <div key={m.id} class="border border-gray-100 p-4 rounded-lg bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center shadow-sm">
                           <div>
                             <h4 class="font-bold text-slate-800 text-base">{m.title}</h4>
-                            <p class="text-xs text-gray-500 mt-1">{m.location} | Budget: ${m.budget_min}-${m.budget_max}/hr</p>
+                            <p class="text-xs text-gray-500 mt-1">{m.location} | Budget: $${m.budget_min}-$${m.budget_max}/hr</p>
                             <p class="text-xs text-emerald-600 font-bold mt-1">Match Score: {m.match_score}%</p>
                             <p class="text-xs text-gray-400 mt-1">Status: <span class="capitalize font-semibold text-slate-700">{m.status}</span></p>
                             {m.description && <p class="text-xs text-gray-500 mt-2 italic">"{m.description}"</p>}
@@ -528,16 +548,16 @@
               <div class="space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm text-center">
-                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Active Personnel</h4>
-                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{stats.personnel_count}</p>
+                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Registered Personnel</h4>
+                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{personnel.length}</p>
                   </div>
                   <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm text-center">
-                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Open Hire Requests</h4>
-                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{stats.open_requests_count}</p>
+                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Hire Requests</h4>
+                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{requests.length}</p>
                   </div>
                   <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm text-center">
                     <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Total Matches</h4>
-                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{stats.total_matches_count}</p>
+                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{matches.length}</p>
                   </div>
                 </div>
                 
@@ -554,7 +574,7 @@
                           <div>
                             <h4 class="font-semibold text-sm text-slate-800">{p.first_name} {p.last_name}</h4>
                             <p class="text-xs text-gray-500 capitalize">{p.service_types} • {p.years_experience} yrs</p>
-                            <p class="text-xs font-bold text-[#c8972e] mt-1">${p.hourly_rate}/hr | {p.rating}★</p>
+                            <p class="text-xs font-bold text-amber-500 mt-1">$${p.hourly_rate}/hr | {p.rating}★</p>
                           </div>
                         </div>
                       ))
