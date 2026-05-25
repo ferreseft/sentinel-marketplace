@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel Security Marketplace</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function App() {
+      const [role, setRole] = useState('customer'); // customer, guard, admin
+      
+      // Dynamic lists connected to our Netlify REST API
+      const [personnel, setPersonnel] = useState([]);
+      const [requests, setRequests] = useState([]);
+      const [matches, setMatches] = useState([]);
+      const [notifications, setNotifications] = useState([]);
+      const [loading, setLoading] = useState(false);
+      
+      // Form States
+      const [newRequest, setNewRequest] = useState({
+        title: '',
+        description: '',
+        service_type_needed: 'executive',
+        location: '',
+        start_date: '2026-06-15 18:00:00',
+        end_date: '2026-06-15 23:00:00',
+        budget_min: 40,
+        budget_max: 60,
+        personnel_count: 2,
+        urgency: 'standard'
+      });
+      
+      const [newGuard, setNewGuard] = useState({
+        first_name: '',
+        last_name: '',
+        email: '',
+        phone: '',
+        certifications: 'Armed Guard License, CPR/First Aid',
+        years_experience: 5,
+        service_types: 'armed,executive',
+        hourly_rate: 35,
+        daily_rate: 280,
+        photo_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150',
+        bio: 'Professional security guard with comprehensive field experience.',
+        service_area: 'Miami-Dade County, FL'
+      });
+
+      // API Helper Fetchers
+      const fetchPersonnel = async () => {
+        try {
+          const res = await fetch('/api/personnel');
+          const data = await res.json();
+          setPersonnel(data);
+        } catch (e) { console.error('Error fetching personnel:', e); }
+      };
+
+      const fetchRequests = async () => {
+        try {
+          const res = await fetch('/api/hire-requests-list?customer_id=1');
+          const data = await res.json();
+          setRequests(data);
+        } catch (e) { console.error('Error fetching requests:', e); }
+      };
+
+      const fetchMatches = async (reqId) => {
+        try {
+          const res = await fetch(reqId ? `/api/matches?hire_request_id=${reqId}` : '/api/matches');
+          const data = await res.json();
+          setMatches(data);
+        } catch (e) { console.error('Error fetching matches:', e); }
+      };
+
+      const fetchGuardInvitations = async (guardId) => {
+        try {
+          const res = await fetch(`/api/matches?personnel_id=${guardId}`);
+          const data = await res.json();
+          setMatches(data);
+        } catch (e) { console.error('Error fetching guard invites:', e); }
+      };
+
+      const fetchNotifications = async (type, id) => {
+        try {
+          const res = await fetch(`/api/notifications?recipient_type=${type}&recipient_id=${id}`);
+          const data = await res.json();
+          setNotifications(data);
+        } catch (e) { console.error('Error:', e); }
+      };
+
+      useEffect(() => {
+        setLoading(true);
+        if (role === 'customer') {
+          fetchRequests();
+          fetchPersonnel();
+          fetchMatches(1); // Fetch default matches for gala request
+          fetchNotifications('customer', 1);
+        } else if (role === 'guard') {
+          fetchGuardInvitations(1); // Fetch invites for Marcus Vance (ID 1)
+          fetchNotifications('personnel', 1);
+        } else if (role === 'admin') {
+          fetchPersonnel();
+          fetchRequests();
+          fetchMatches();
+          fetchNotifications();
+        }
+        setLoading(false);
+      }, [role]);
+
+      // Actions
+      const handleCreateRequest = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+          const res = await fetch('/api/hire-requests', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...newRequest, customer_id: 1 })
+          });
+          const data = await res.json();
+          alert(`Hire request created successfully! Matched with ${data.matches ? data.matches.length : 0} personnel!`);
+          fetchRequests();
+          fetchMatches(data.id);
+        } catch (e) { alert('Failed to submit request'); }
+        setLoading(false);
+      };
+
+      const handleRegisterGuard = async (e) => {
+        e.preventDefault();
+        setLoading(true);
+        try {
+          const res = await fetch('/api/personnel-register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newGuard)
+          });
+          alert('Security Personnel registered successfully!');
+          fetchPersonnel();
+        } catch (e) { alert('Registration failed'); }
+        setLoading(false);
+      };
+
+      const handleRespondMatch = async (matchId, status) => {
+        try {
+          await fetch('/api/match-respond', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ match_id: matchId, status, notes: 'Responded via Mobile/Web portal' })
+          });
+          alert(`Match successfully ${status}!`);
+          if (role === 'guard') fetchGuardInvitations(1);
+          else fetchMatches(1);
+        } catch (e) { alert('Response failed'); }
+      };
+
+      return (
+        <div class="min-h-screen flex flex-col">
+          {/* Header */}
+          <header class="bg-slate-950 text-white p-4 shadow-md flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+              <span class="text-2xl font-bold tracking-wider text-amber-500">SENTINEL</span>
+              <span class="text-xs text-gray-400 uppercase tracking-widest hidden sm:inline">Security Marketplace</span>
+            </div>
+            <div class="flex space-x-2 bg-slate-900 p-1 rounded-md">
+              <button onClick={() => setRole('customer')} class={`px-3 py-1 rounded text-sm transition ${role === 'customer' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-gray-300'}`}>Customer Workspace</button>
+              <button onClick={() => setRole('guard')} class={`px-3 py-1 rounded text-sm transition ${role === 'guard' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-gray-300'}`}>Guard Portal</button>
+              <button onClick={() => setRole('admin')} class={`px-3 py-1 rounded text-sm transition ${role === 'admin' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-gray-300'}`}>Platform Admin</button>
+            </div>
+          </header>
+
+          {/* Loader */}
+          {loading && (
+            <div class="bg-amber-500 text-slate-950 text-xs font-bold text-center py-1 uppercase tracking-wider animate-pulse">
+              Syncing with Netlify Serverless API...
+            </div>
+          )}
+
+          {/* Main Dashboard */}
+          <main class="flex-1 max-w-6xl w-full mx-auto p-4 sm:p-6">
+            <h2 class="text-xl font-bold mb-6 text-slate-800 capitalize flex items-center">
+              <span class="mr-2 text-amber-500">•</span> {role} Space
+            </h2>
+
+            {role === 'customer' && (
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Left panel - Hire form */}
+                <div class="md:col-span-1 bg-white p-6 rounded-xl border border-gray-100 shadow-sm self-start">
+                  <h3 class="text-lg font-bold mb-4 flex items-center text-slate-900">New Hire Request</h3>
+                  <form onSubmit={handleCreateRequest} class="space-y-4 text-sm">
+                    <div>
+                      <label class="block text-gray-600 mb-1">Job Title</label>
+                      <input type="text" required placeholder="e.g. VIP Dinner Security" class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newRequest.title} onChange={e => setNewRequest({...newRequest, title: e.target.value})} />
+                    </div>
+                    <div>
+                      <label class="block text-gray-600 mb-1">Service Type Needed</label>
+                      <select class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newRequest.service_type_needed} onChange={e => setNewRequest({...newRequest, service_type_needed: e.target.value})}>
+                        <option value="executive">Executive Protection</option>
+                        <option value="armed">Armed Security</option>
+                        <option value="unarmed">Unarmed Patrol</option>
+                        <option value="event">Event Security</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-gray-600 mb-1">Location</label>
+                      <input type="text" required placeholder="e.g. Miami Beach, FL" class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newRequest.location} onChange={e => setNewRequest({...newRequest, location: e.target.value})} />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-gray-600 mb-1">Budget Min ($/hr)</label>
+                        <input type="number" class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newRequest.budget_min} onChange={e => setNewRequest({...newRequest, budget_min: parseInt(e.target.value)})} />
+                      </div>
+                      <div>
+                        <label class="block text-gray-600 mb-1">Budget Max ($/hr)</label>
+                        <input type="number" class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newRequest.budget_max} onChange={e => setNewRequest({...newRequest, budget_max: parseInt(e.target.value)})} />
+                      </div>
+                    </div>
+                    <button type="submit" class="w-full bg-slate-950 text-white p-3 rounded-lg font-semibold hover:bg-slate-900 transition flex justify-center items-center">Submit & Run Match Engine</button>
+                  </form>
+                </div>
+
+                {/* Right panel - List of Requests */}
+                <div class="md:col-span-2 space-y-6">
+                  {/* Active Requests */}
+                  <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 class="text-lg font-bold mb-4 text-slate-900">Your Hire Requests</h3>
+                    <div class="space-y-3">
+                      {requests.map(req => (
+                        <div key={req.id} onClick={() => fetchMatches(req.id)} class="border border-gray-100 p-4 rounded-lg bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:border-amber-500 cursor-pointer transition">
+                          <div>
+                            <h4 class="font-bold text-slate-800 text-base">{req.title}</h4>
+                            <p class="text-xs text-gray-500 mt-1">Service: <span class="capitalize font-semibold">{req.service_type_needed}</span> | Location: {req.location}</p>
+                            <p class="text-xs text-gray-400 mt-1">Dates: {req.start_date} to {req.end_date}</p>
+                          </div>
+                          <span class="mt-2 sm:mt-0 px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-full uppercase tracking-wider">{req.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Best Matches */}
+                  <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                    <h3 class="text-lg font-bold mb-4 text-slate-900">Top Rated Matches</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {matches.map(m => (
+                        <div key={m.id} class="border border-gray-100 p-4 rounded-lg bg-white shadow-sm hover:shadow transition relative">
+                          <span class="absolute top-2 right-2 bg-amber-500 text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">{m.match_score}% Fit</span>
+                          <div class="flex space-x-3 items-center">
+                            <img src={m.photo_url} class="w-12 h-12 rounded-full object-cover border border-gray-200" />
+                            <div>
+                              <h4 class="font-semibold text-sm text-slate-800">{m.first_name} {m.last_name}</h4>
+                              <p class="text-xs text-gray-500">{m.years_experience} yrs exp | {m.rating}★</p>
+                              <p class="text-xs font-bold text-amber-500 mt-1">${m.hourly_rate}/hr</p>
+                            </div>
+                          </div>
+                          <div class="mt-3 pt-3 border-t border-gray-50 flex justify-between items-center text-xs">
+                            <span class="text-gray-500 font-semibold capitalize">Status: {m.status}</span>
+                            {m.status === 'proposed' && (
+                              <button onClick={() => handleRespondMatch(m.id, 'accepted')} class="bg-emerald-600 text-white font-bold px-3 py-1 rounded">Hire</button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {role === 'guard' && (
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Left panel - Register/Edit profile */}
+                <div class="md:col-span-1 bg-white p-6 rounded-xl border border-gray-100 shadow-sm self-start">
+                  <h3 class="text-lg font-bold mb-4 flex items-center text-slate-900">Register Guard Profile</h3>
+                  <form onSubmit={handleRegisterGuard} class="space-y-4 text-sm">
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-gray-600 mb-1">First Name</label>
+                        <input type="text" required class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newGuard.first_name} onChange={e => setNewGuard({...newGuard, first_name: e.target.value})} />
+                      </div>
+                      <div>
+                        <label class="block text-gray-600 mb-1">Last Name</label>
+                        <input type="text" required class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newGuard.last_name} onChange={e => setNewGuard({...newGuard, last_name: e.target.value})} />
+                      </div>
+                    </div>
+                    <div>
+                      <label class="block text-gray-600 mb-1">Email</label>
+                      <input type="email" required class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newGuard.email} onChange={e => setNewGuard({...newGuard, email: e.target.value})} />
+                    </div>
+                    <div>
+                      <label class="block text-gray-600 mb-1">Service Types (comma list)</label>
+                      <input type="text" required placeholder="e.g. armed,executive" class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newGuard.service_types} onChange={e => setNewGuard({...newGuard, service_types: e.target.value})} />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-gray-600 mb-1">Hourly Rate ($)</label>
+                        <input type="number" required class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newGuard.hourly_rate} onChange={e => setNewGuard({...newGuard, hourly_rate: parseInt(e.target.value)})} />
+                      </div>
+                      <div>
+                        <label class="block text-gray-600 mb-1">Exp (years)</label>
+                        <input type="number" required class="w-full p-2 border border-gray-200 rounded-md focus:outline-amber-500" value={newGuard.years_experience} onChange={e => setNewGuard({...newGuard, years_experience: parseInt(e.target.value)})} />
+                      </div>
+                    </div>
+                    <button type="submit" class="w-full bg-slate-950 text-white p-3 rounded-lg font-semibold hover:bg-slate-900 transition flex justify-center items-center">Join Marketplace</button>
+                  </form>
+                </div>
+
+                {/* Right panel - Job invitations */}
+                <div class="md:col-span-2 bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <h3 class="text-lg font-bold mb-4 text-slate-900">Your Incoming Job Invitations</h3>
+                  <div class="space-y-4">
+                    {matches.map(m => (
+                      <div key={m.id} class="border border-gray-100 p-4 rounded-lg bg-gray-50 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                        <div>
+                          <h4 class="font-bold text-slate-800 text-base">{m.title}</h4>
+                          <p class="text-xs text-gray-500 mt-1">{m.location} | Pay: $${m.budget_min}-$${m.budget_max}/hr</p>
+                          <p class="text-xs text-emerald-600 font-bold mt-1">Match Score: {m.match_score}%</p>
+                          <p class="text-xs text-gray-400 mt-1">Status: <span class="capitalize font-semibold">{m.status}</span></p>
+                        </div>
+                        {m.status === 'proposed' && (
+                          <div class="flex space-x-2 mt-3 sm:mt-0">
+                            <button onClick={() => handleRespondMatch(m.id, 'accepted')} class="bg-emerald-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-emerald-500">Accept</button>
+                            <button onClick={() => handleRespondMatch(m.id, 'rejected')} class="bg-rose-600 text-white px-4 py-2 rounded text-xs font-bold hover:bg-rose-500">Decline</button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {role === 'admin' && (
+              <div class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Registered Personnel</h4>
+                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{personnel.length}</p>
+                  </div>
+                  <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Hire Requests</h4>
+                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{requests.length}</p>
+                  </div>
+                  <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm text-center">
+                    <h4 class="text-xs uppercase text-gray-400 font-bold tracking-widest">Total Matches</h4>
+                    <p class="text-3xl font-extrabold text-slate-800 mt-2">{matches.length}</p>
+                  </div>
+                </div>
+                
+                {/* Admin Personnel List */}
+                <div class="bg-white p-6 rounded-xl border border-gray-100 shadow-sm">
+                  <h3 class="text-lg font-bold mb-4 text-slate-900">Platform Registered Security Personnel</h3>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {personnel.map(p => (
+                      <div key={p.id} class="border border-gray-100 p-4 rounded-lg flex space-x-3 items-center bg-gray-50">
+                        <img src={p.photo_url} class="w-12 h-12 rounded-full object-cover border border-gray-200" />
+                        <div>
+                          <h4 class="font-semibold text-sm text-slate-800">{p.first_name} {p.last_name}</h4>
+                          <p class="text-xs text-gray-500 capitalize">{p.service_types} • {p.years_experience} yrs</p>
+                          <p class="text-xs font-bold text-amber-500 mt-1">$${p.hourly_rate}/hr | {p.rating}★</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
