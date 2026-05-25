@@ -18,8 +18,7 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const customerId = event.queryStringParameters && event.queryStringParameters.customer_id;
-    const list = await db.getHireRequests(customerId);
+    const stats = await db.getStats();
 
     return {
       statusCode: 200,
@@ -29,7 +28,7 @@ exports.handler = async (event, context) => {
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
       },
-      body: JSON.stringify(list)
+      body: JSON.stringify(stats)
     };
   } catch (err) {
     return {

@@ -1,167 +1,394 @@
 // NOTE: In-memory store for testing. Data resets on cold start. For production, migrate to Turso (libsql), Supabase, or PlanetScale.
+const { createClient } = require('@libsql/client');
 
-let personnel = [
-  {
-    id: 1, first_name: 'Marcus', last_name: 'Vance', email: 'marcus.vance@example.com', phone: '+13055550199', 
-    certifications: 'Armed Guard License, CPR/First Aid, Executive Protection, CCW Permit, Tactical Firearms', 
-    years_experience: 12, service_types: 'armed,event,executive,corporate', availability_status: 'available', availability_notes: 'Full-time availability', 
-    service_area: 'Miami-Dade County, FL', hourly_rate: 45.00, daily_rate: 350.00, 
-    photo_url: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', 
-    resume_url: 'https://example.com/resumes/marcus_vance.pdf', 
-    bio: 'Former military police officer with over a decade of private executive protection experience in South Florida. Expert in threat assessment and high-profile security.', 
-    rating: 4.9, total_jobs_completed: 124, profile_status: 'active'
-  },
-  {
-    id: 2, first_name: 'Sarah', last_name: 'Jenkins', email: 'sarah.jenkins@example.com', phone: '+13055550122', 
-    certifications: 'CPR/First Aid, Unarmed Guard License, De-escalation Training, Event Security', 
-    years_experience: 5, service_types: 'unarmed,event,residential,corporate', availability_status: 'available', availability_notes: 'Prefers weekends and evening shifts', 
-    service_area: 'Miami-Dade County, FL', hourly_rate: 25.00, daily_rate: 200.00, 
-    photo_url: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', 
-    resume_url: 'https://example.com/resumes/sarah_jenkins.pdf', 
-    bio: 'Professional and courteous unarmed guard specializing in retail asset protection and large event security. Strong communicator with extensive de-escalation training.', 
-    rating: 4.8, total_jobs_completed: 82, profile_status: 'active'
-  },
-  {
-    id: 3, first_name: 'Elena', last_name: 'Rostova', email: 'elena.rostova@example.com', phone: '+13055550143', 
-    certifications: 'Executive Protection, Armed Guard License, Advanced Defensive Driving, EMT Certification', 
-    years_experience: 8, service_types: 'armed,unarmed,executive,personal,corporate', availability_status: 'partially_available', availability_notes: 'Available weekdays, nights only', 
-    service_area: 'Miami-Dade County, FL', hourly_rate: 55.00, daily_rate: 450.00, 
-    photo_url: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150', 
-    resume_url: 'https://example.com/resumes/elena_rostova.pdf', 
-    bio: 'Specialized in personal protection for corporate executives, celebrities, and VIPs. Dual certified as an EMT and defensively trained driver.', 
-    rating: 5.0, total_jobs_completed: 45, profile_status: 'active'
-  },
-  {
-    id: 4, first_name: 'David', last_name: 'Chen', email: 'david.chen@example.com', phone: '+19545550188', 
-    certifications: 'Unarmed Guard License, CPR/First Aid', 
-    years_experience: 2, service_types: 'unarmed,residential,corporate,event', availability_status: 'available', availability_notes: 'Flexible hours', 
-    service_area: 'Miami-Dade County, FL', hourly_rate: 18.00, daily_rate: 140.00, 
-    photo_url: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150', 
-    resume_url: 'https://example.com/resumes/david_chen.pdf', 
-    bio: 'Reliable and vigilant guard with 2 years of corporate security desk experience. Committed to maintaining a safe and welcoming environment.', 
-    rating: 4.5, total_jobs_completed: 12, profile_status: 'active'
+// Initialize Turso Client
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL || 'file:local.db',
+  authToken: process.env.TURSO_AUTH_TOKEN
+});
+
+let initPromise = null;
+
+async function ensureInit() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      console.log('Initializing database tables...');
+      
+      // 1. Create tables
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS security_personnel (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          first_name TEXT, last_name TEXT, email TEXT UNIQUE, phone TEXT,
+          certifications TEXT, years_experience INTEGER, service_types TEXT,
+          availability_status TEXT DEFAULT 'available', availability_notes TEXT,
+          service_area TEXT, hourly_rate REAL, daily_rate REAL, photo_url TEXT,
+          resume_url TEXT, bio TEXT, rating REAL DEFAULT 0, total_jobs_completed INTEGER DEFAULT 0,
+          profile_status TEXT DEFAULT 'pending_review', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS customers (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          first_name TEXT, last_name TEXT, email TEXT UNIQUE, phone TEXT,
+          company_name TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS hire_requests (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, customer_id INTEGER, title TEXT, description TEXT,
+          service_type_needed TEXT, location TEXT, start_date TEXT, end_date TEXT,
+          budget_min REAL, budget_max REAL, personnel_count INTEGER DEFAULT 1,
+          urgency TEXT DEFAULT 'standard', status TEXT DEFAULT 'open',
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS matches (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, hire_request_id INTEGER, personnel_id INTEGER,
+          match_score REAL, status TEXT DEFAULT 'proposed', proposed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          responded_at TEXT, notes TEXT
+        );
+      `);
+
+      await client.execute(`
+        CREATE TABLE IF NOT EXISTS notifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT, recipient_type TEXT, recipient_id INTEGER,
+          notification_type TEXT, subject TEXT, body TEXT, is_read INTEGER DEFAULT 0,
+          email_sent INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // 2. Check if seeding is needed
+      const personnelCountRes = await client.execute("SELECT COUNT(*) as count FROM security_personnel");
+      const personnelCount = personnelCountRes.rows[0].count;
+      
+      if (personnelCount === 0) {
+        console.log('Database is empty. Seeding initial test data...');
+        
+        // Seed Personnel
+        await client.execute({
+          sql: `INSERT OR IGNORE INTO security_personnel 
+            (id, first_name, last_name, email, phone, certifications, years_experience, service_types, availability_status, availability_notes, service_area, hourly_rate, daily_rate, photo_url, resume_url, bio, rating, total_jobs_completed, profile_status)
+            VALUES (1, 'Marcus', 'Vance', 'marcus.vance@example.com', '+13055550199', 
+            'Armed Guard License, CPR/First Aid, Executive Protection, CCW Permit, Tactical Firearms', 
+            12, 'armed,event,executive,corporate', 'available', 'Full-time availability', 
+            'Miami-Dade County, FL', 45.00, 350.00, 
+            'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', 
+            'https://example.com/resumes/marcus_vance.pdf', 
+            'Former military police officer with over a decade of private executive protection experience in South Florida. Expert in threat assessment and high-profile security.', 
+            4.9, 124, 'active')`,
+          args: []
+        });
+
+        await client.execute({
+          sql: `INSERT OR IGNORE INTO security_personnel 
+            (id, first_name, last_name, email, phone, certifications, years_experience, service_types, availability_status, availability_notes, service_area, hourly_rate, daily_rate, photo_url, resume_url, bio, rating, total_jobs_completed, profile_status)
+            VALUES (2, 'Sarah', 'Jenkins', 'sarah.jenkins@example.com', '+13055550122', 
+            'CPR/First Aid, Unarmed Guard License, De-escalation Training, Event Security', 
+            5, 'unarmed,event,residential,corporate', 'available', 'Prefers weekends and evening shifts', 
+            'Miami-Dade County, FL', 25.00, 200.00, 
+            'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', 
+            'https://example.com/resumes/sarah_jenkins.pdf', 
+            'Professional and courteous unarmed guard specializing in retail asset protection and large event security. Strong communicator with extensive de-escalation training.', 
+            4.8, 82, 'active')`,
+          args: []
+        });
+
+        await client.execute({
+          sql: `INSERT OR IGNORE INTO security_personnel 
+            (id, first_name, last_name, email, phone, certifications, years_experience, service_types, availability_status, availability_notes, service_area, hourly_rate, daily_rate, photo_url, resume_url, bio, rating, total_jobs_completed, profile_status)
+            VALUES (3, 'Elena', 'Rostova', 'elena.rostova@example.com', '+13055550143', 
+            'Executive Protection, Armed Guard License, Advanced Defensive Driving, EMT Certification', 
+            8, 'armed,unarmed,executive,personal,corporate', 'partially_available', 'Available weekdays, nights only', 
+            'Miami-Dade County, FL', 55.00, 450.00, 
+            'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150', 
+            'https://example.com/resumes/elena_rostova.pdf', 
+            'Specialized in personal protection for corporate executives, celebrities, and VIPs. Dual certified as an EMT and defensively trained driver.', 
+            5.0, 45, 'active')`,
+          args: []
+        });
+
+        await client.execute({
+          sql: `INSERT OR IGNORE INTO security_personnel 
+            (id, first_name, last_name, email, phone, certifications, years_experience, service_types, availability_status, availability_notes, service_area, hourly_rate, daily_rate, photo_url, resume_url, bio, rating, total_jobs_completed, profile_status)
+            VALUES (4, 'David', 'Chen', 'david.chen@example.com', '+19545550188', 
+            'Unarmed Guard License, CPR/First Aid', 
+            2, 'unarmed,residential,corporate,event', 'available', 'Flexible hours', 
+            'Miami-Dade County, FL', 18.00, 140.00, 
+            'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150', 
+            'https://example.com/resumes/david_chen.pdf', 
+            'Reliable and vigilant guard with 2 years of corporate security desk experience. Committed to maintaining a safe and welcoming environment.', 
+            4.5, 12, 'active')`,
+          args: []
+        });
+
+        // Seed Customer
+        await client.execute("INSERT OR IGNORE INTO customers (id, first_name, last_name, email, phone, company_name) VALUES (1, 'James', 'Sterling', 'james.sterling@example.com', '+13055550201', 'Sterling Enterprises')");
+
+        // Seed Hire Request
+        await client.execute(`INSERT OR IGNORE INTO hire_requests 
+          (id, customer_id, title, description, service_type_needed, location, start_date, end_date, budget_min, budget_max, personnel_count, urgency, status)
+          VALUES (1, 1, 'Corporate Event Security - Annual Gala', 
+          'Need high-level security for our corporate gala. Expecting 200 guests. Armed or executive protection-trained personnel preferred.', 
+          'executive', 'Grand Ballroom, Miami Beach, FL', '2026-06-15 18:00:00', '2026-06-15 23:00:00', 
+          40.00, 60.00, 2, 'standard', 'matched')`);
+
+        // Seed Matches
+        await client.execute("INSERT OR IGNORE INTO matches (id, hire_request_id, personnel_id, match_score, status) VALUES (1, 1, 1, 97.0, 'proposed')");
+        await client.execute("INSERT OR IGNORE INTO matches (id, hire_request_id, personnel_id, match_score, status) VALUES (2, 1, 3, 88.0, 'proposed')");
+
+        // Seed Notifications
+        await client.execute("INSERT OR IGNORE INTO notifications (id, recipient_type, recipient_id, notification_type, subject, body, is_read, email_sent) VALUES (1, 'personnel', 1, 'new_request', 'New Opportunity: Gala', 'Matched to Corporate Event Security - Annual Gala', 0, 1)");
+        await client.execute("INSERT OR IGNORE INTO notifications (id, recipient_type, recipient_id, notification_type, subject, body, is_read, email_sent) VALUES (2, 'personnel', 3, 'new_request', 'New Opportunity: Gala', 'Matched to Corporate Event Security - Annual Gala', 0, 1)");
+        await client.execute("INSERT OR IGNORE INTO notifications (id, recipient_type, recipient_id, notification_type, subject, body, is_read, email_sent) VALUES (3, 'customer', 1, 'new_match', 'Matches Found: Gala', 'We found 2 qualified matches for your Gala request.', 0, 1)");
+      }
+    })();
   }
-];
+  return initPromise;
+}
 
-let customers = [
-  { id: 1, first_name: 'James', last_name: 'Sterling', email: 'james.sterling@example.com', phone: '+13055550201', company_name: 'Sterling Enterprises' }
-];
+// Helper: map libsql row array to object
+function mapRow(columns, row) {
+  const obj = {};
+  columns.forEach((col, idx) => {
+    obj[col] = row[idx];
+  });
+  return obj;
+}
 
-let hireRequests = [
-  {
-    id: 1, customer_id: 1, title: 'Corporate Event Security - Annual Gala', 
-    description: 'Need high-level security for our corporate gala. Expecting 200 guests. Armed or executive protection-trained personnel preferred.', 
-    service_type_needed: 'executive', location: 'Grand Ballroom, Miami Beach, FL', start_date: '2026-06-15 18:00:00', end_date: '2026-06-15 23:00:00', 
-    budget_min: 40.00, budget_max: 60.00, personnel_count: 2, urgency: 'standard', status: 'matched'
+function mapRows(res) {
+  return res.rows.map(row => mapRow(res.columns, row));
+}
+
+// ---------------- EXPORTED FUNCTIONS ----------------
+
+async function getPersonnel() {
+  await ensureInit();
+  const res = await client.execute("SELECT * FROM security_personnel");
+  return mapRows(res);
+}
+
+async function getPersonnelById(id) {
+  await ensureInit();
+  const res = await client.execute({
+    sql: "SELECT * FROM security_personnel WHERE id = ?",
+    args: [id]
+  });
+  const list = mapRows(res);
+  return list.length > 0 ? list[0] : null;
+}
+
+async function addPersonnel(data) {
+  await ensureInit();
+  const res = await client.execute({
+    sql: `INSERT INTO security_personnel (
+      first_name, last_name, email, phone, certifications, years_experience,
+      service_types, availability_status, availability_notes, service_area,
+      hourly_rate, daily_rate, photo_url, resume_url, bio, profile_status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_review')`,
+    args: [
+      data.first_name, data.last_name, data.email, data.phone, data.certifications, 
+      data.years_experience || 0, data.service_types, data.availability_status || 'available', 
+      data.availability_notes, data.service_area, data.hourly_rate || 0, data.daily_rate || 0, 
+      data.photo_url, data.resume_url, data.bio
+    ]
+  });
+  return { id: res.lastInsertRowid };
+}
+
+async function getHireRequests(customerId) {
+  await ensureInit();
+  let res;
+  if (customerId) {
+    res = await client.execute({
+      sql: "SELECT * FROM hire_requests WHERE customer_id = ? ORDER BY id DESC",
+      args: [customerId]
+    });
+  } else {
+    res = await client.execute("SELECT * FROM hire_requests ORDER BY id DESC");
   }
-];
-
-let matches = [
-  { id: 1, hire_request_id: 1, personnel_id: 1, match_score: 97.0, status: 'proposed' },
-  { id: 2, hire_request_id: 1, personnel_id: 3, match_score: 88.0, status: 'proposed' }
-];
-
-let notifications = [
-  { id: 1, recipient_type: 'personnel', recipient_id: 1, notification_type: 'new_request', subject: 'New Opportunity: Gala', body: 'Matched to Corporate Event Security - Annual Gala', is_read: 0, email_sent: 1 },
-  { id: 2, recipient_type: 'personnel', recipient_id: 3, notification_type: 'new_request', subject: 'New Opportunity: Gala', body: 'Matched to Corporate Event Security - Annual Gala', is_read: 0, email_sent: 1 },
-  { id: 3, recipient_type: 'customer', recipient_id: 1, notification_type: 'new_match', subject: 'Matches Found: Gala', body: 'We found 2 qualified matches for your Gala request.', is_read: 0, email_sent: 1 }
-];
-
-function getPersonnel() {
-  return personnel;
+  return mapRows(res);
 }
 
-function addPersonnel(data) {
-  const newGuard = {
-    id: personnel.length + 1,
-    rating: 0,
-    total_jobs_completed: 0,
-    profile_status: 'active',
-    ...data
-  };
-  personnel.push(newGuard);
-  return newGuard;
-}
-
-function getHireRequests() {
-  return hireRequests;
-}
-
-function addHireRequest(data) {
-  const newReq = {
-    id: hireRequests.length + 1,
-    status: 'open',
-    ...data
-  };
-  hireRequests.push(newReq);
+async function addHireRequest(data) {
+  await ensureInit();
+  const res = await client.execute({
+    sql: `INSERT INTO hire_requests (
+      customer_id, title, description, service_type_needed, location, start_date, end_date,
+      budget_min, budget_max, personnel_count, urgency, status
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open')`,
+    args: [
+      data.customer_id || 1, data.title, data.description, data.service_type_needed, data.location,
+      data.start_date, data.end_date, data.budget_min || 0, data.budget_max || 0, 
+      data.personnel_count || 1, data.urgency || 'standard'
+    ]
+  });
   
-  // TRIGGER MATCHING ENGINE FOR THIS NEW REQUEST
-  runMatchEngine(newReq);
+  const requestId = res.lastInsertRowid;
   
-  return newReq;
+  // Trigger matching engine
+  await runMatchEngine(requestId);
+  
+  // Return the newly created request
+  const reqRes = await client.execute({
+    sql: "SELECT * FROM hire_requests WHERE id = ?",
+    args: [requestId]
+  });
+  return mapRows(reqRes)[0];
 }
 
-function getMatches() {
-  return matches;
+async function getMatches(requestId, personnelId) {
+  await ensureInit();
+  let res;
+  if (requestId) {
+    res = await client.execute({
+      sql: `SELECT m.*, p.first_name, p.last_name, p.photo_url, p.rating, p.hourly_rate, p.years_experience, p.certifications, p.bio, p.email, p.phone
+            FROM matches m
+            JOIN security_personnel p ON m.personnel_id = p.id
+            WHERE m.hire_request_id = ?
+            ORDER BY m.match_score DESC`,
+      args: [requestId]
+    });
+  } else if (personnelId) {
+    res = await client.execute({
+      sql: `SELECT m.*, r.title, r.location, r.start_date, r.end_date, r.budget_max, r.budget_min, r.description, r.customer_id
+            FROM matches m
+            JOIN hire_requests r ON m.hire_request_id = r.id
+            WHERE m.personnel_id = ?
+            ORDER BY m.id DESC`,
+      args: [personnelId]
+    });
+  } else {
+    res = await client.execute("SELECT * FROM matches ORDER BY id DESC");
+  }
+  return mapRows(res);
 }
 
-function addMatch(data) {
-  const m = {
-    id: matches.length + 1,
-    status: 'proposed',
-    ...data
-  };
-  matches.push(m);
-  return m;
+async function addMatch(data) {
+  await ensureInit();
+  const res = await client.execute({
+    sql: "INSERT INTO matches (hire_request_id, personnel_id, match_score, status) VALUES (?, ?, ?, 'proposed')",
+    args: [data.hire_request_id, data.personnel_id, data.match_score]
+  });
+  return { id: res.lastInsertRowid };
 }
 
-function updateMatchStatus(matchId, status, notes) {
-  const match = matches.find(m => m.id === parseInt(matchId));
+async function updateMatchStatus(matchId, status) {
+  await ensureInit();
+  await client.execute({
+    sql: "UPDATE matches SET status = ?, responded_at = CURRENT_TIMESTAMP WHERE id = ?",
+    args: [status, matchId]
+  });
+
+  // Fetch match details to send alert notification to the customer
+  const matchRes = await client.execute({
+    sql: `SELECT m.*, r.customer_id, r.title, p.first_name, p.last_name, p.email as p_email, p.phone as p_phone
+          FROM matches m
+          JOIN hire_requests r ON m.hire_request_id = r.id
+          JOIN security_personnel p ON m.personnel_id = p.id
+          WHERE m.id = ?`,
+    args: [matchId]
+  });
+  const match = mapRows(matchRes)[0];
+
   if (match) {
-    match.status = status;
-    match.responded_at = new Date().toISOString();
-    match.notes = notes || '';
+    const subject = `Match Response: ${match.first_name} ${match.last_name} ${status}`;
+    let body = `Security guard ${match.first_name} ${match.last_name} has ${status} your match proposal for "${match.title}".`;
     
-    // Add Alert Notification to Customer
-    const req = hireRequests.find(r => r.id === match.hire_request_id);
-    const p = personnel.find(g => g.id === match.personnel_id);
-    if (req && p) {
-      addNotification({
-        recipient_type: 'customer',
-        recipient_id: req.customer_id,
-        notification_type: 'match_accepted',
-        subject: `Match Response: ${p.first_name} ${p.last_name} ${status}`,
-        body: `Security guard ${p.first_name} ${p.last_name} has ${status} your match proposal for "${req.title}". Notes: ${notes || 'None'}`
-      });
+    if (status === 'accepted') {
+      body += ` You can now contact them directly via email: ${match.p_email} or phone: ${match.p_phone}.`;
     }
+    
+    await addNotification({
+      recipient_type: 'customer',
+      recipient_id: match.customer_id,
+      notification_type: 'match_accepted',
+      subject: subject,
+      body: body
+    });
+    
+    // Also notify the personnel
+    await addNotification({
+      recipient_type: 'personnel',
+      recipient_id: match.personnel_id,
+      notification_type: 'match_accepted',
+      subject: `Match Confirmed: ${match.title}`,
+      body: `You have successfully accepted the job match for "${match.title}".`
+    });
     return true;
   }
   return false;
 }
 
-function getNotifications() {
-  return notifications;
+async function getNotifications(recipientType, recipientId) {
+  await ensureInit();
+  let res;
+  if (recipientType && recipientId) {
+    res = await client.execute({
+      sql: "SELECT * FROM notifications WHERE recipient_type = ? AND recipient_id = ? ORDER BY id DESC",
+      args: [recipientType, recipientId]
+    });
+  } else {
+    res = await client.execute("SELECT * FROM notifications ORDER BY id DESC");
+  }
+  return mapRows(res);
 }
 
-function addNotification(data) {
-  const n = {
-    id: notifications.length + 1,
-    is_read: 0,
-    email_sent: 1,
-    created_at: new Date().toISOString(),
-    ...data
+async function addNotification(data) {
+  await ensureInit();
+  const res = await client.execute({
+    sql: "INSERT INTO notifications (recipient_type, recipient_id, notification_type, subject, body, is_read, email_sent) VALUES (?, ?, ?, ?, ?, 0, 1)",
+    args: [data.recipient_type, data.recipient_id, data.notification_type, data.subject, data.body]
+  });
+  return { id: res.lastInsertRowid };
+}
+
+async function getCustomers() {
+  await ensureInit();
+  const res = await client.execute("SELECT * FROM customers ORDER BY id DESC");
+  return mapRows(res);
+}
+
+async function addCustomer(data) {
+  await ensureInit();
+  const res = await client.execute({
+    sql: "INSERT INTO customers (first_name, last_name, email, phone, company_name) VALUES (?, ?, ?, ?, ?)",
+    args: [data.first_name, data.last_name, data.email, data.phone, data.company_name]
+  });
+  return { id: res.lastInsertRowid };
+}
+
+async function getStats() {
+  await ensureInit();
+  const personnelRes = await client.execute("SELECT COUNT(*) as count FROM security_personnel WHERE profile_status = 'active'");
+  const requestsRes = await client.execute("SELECT COUNT(*) as count FROM hire_requests WHERE status = 'open'");
+  const matchesRes = await client.execute("SELECT COUNT(*) as count FROM matches");
+  
+  return {
+    personnel_count: personnelRes.rows[0].count,
+    open_requests_count: requestsRes.rows[0].count,
+    total_matches_count: matchesRes.rows[0].count
   };
-  notifications.push(n);
-  return n;
 }
 
-// Same Matching Engine Algorithm
-function runMatchEngine(req) {
-  const activePersonnel = personnel.filter(p => p.profile_status === 'active' && p.availability_status !== 'unavailable');
+// Async Matching Engine Engine
+async function runMatchEngine(requestId) {
+  const reqRes = await client.execute({
+    sql: "SELECT * FROM hire_requests WHERE id = ?",
+    args: [requestId]
+  });
+  const req = mapRows(reqRes)[0];
+  if (!req) return;
+
+  const personnelRes = await client.execute("SELECT * FROM security_personnel WHERE profile_status = 'active' AND availability_status != 'unavailable'");
+  const personnel = mapRows(personnelRes);
   const scored = [];
   const reqServiceType = req.service_type_needed.toLowerCase();
 
-  for (const p of activePersonnel) {
+  for (const p of personnel) {
     const pTypes = (p.service_types || "").split(',').map(s => s.trim().toLowerCase());
     if (!pTypes.includes(reqServiceType)) continue;
 
@@ -197,13 +424,12 @@ function runMatchEngine(req) {
   // Persist matches & queue notifications
   for (const item of top5) {
     const p = item.personnel;
-    addMatch({
-      hire_request_id: req.id,
-      personnel_id: p.id,
-      match_score: item.score
+    await client.execute({
+      sql: "INSERT INTO matches (hire_request_id, personnel_id, match_score, status) VALUES (?, ?, ?, 'proposed')",
+      args: [requestId, p.id, item.score]
     });
-
-    addNotification({
+    
+    await addNotification({
       recipient_type: 'personnel',
       recipient_id: p.id,
       notification_type: 'new_request',
@@ -213,8 +439,12 @@ function runMatchEngine(req) {
   }
 
   if (top5.length > 0) {
-    req.status = 'matched';
-    addNotification({
+    await client.execute({
+      sql: "UPDATE hire_requests SET status = 'matched' WHERE id = ?",
+      args: [requestId]
+    });
+    
+    await addNotification({
       recipient_type: 'customer',
       recipient_id: req.customer_id,
       notification_type: 'new_match',
@@ -225,8 +455,9 @@ function runMatchEngine(req) {
 }
 
 module.exports = {
-  getPersonnel, addPersonnel,
+  getPersonnel, addPersonnel, getPersonnelById,
   getHireRequests, addHireRequest,
   getMatches, addMatch, updateMatchStatus,
-  getNotifications, addNotification
+  getNotifications, addNotification,
+  getCustomers, addCustomer, getStats
 };

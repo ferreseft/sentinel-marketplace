@@ -13,23 +13,23 @@ exports.handler = async (event, context) => {
     };
   }
 
-  if (event.httpMethod !== 'GET') {
+  if (event.httpMethod !== 'POST') {
     return { statusCode: 405, body: 'Method Not Allowed' };
   }
 
   try {
-    const customerId = event.queryStringParameters && event.queryStringParameters.customer_id;
-    const list = await db.getHireRequests(customerId);
+    const data = JSON.parse(event.body);
+    const result = await db.addCustomer(data);
 
     return {
-      statusCode: 200,
+      statusCode: 201,
       headers: {
         'Content-Type': 'application/json',
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Headers': 'Content-Type',
         'Access-Control-Allow-Methods': 'GET, POST, OPTIONS'
       },
-      body: JSON.stringify(list)
+      body: JSON.stringify({ id: result.id, message: 'Customer account successfully created.' })
     };
   } catch (err) {
     return {
