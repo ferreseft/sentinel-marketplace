@@ -1,9 +1,9 @@
 // NOTE: In-memory store for testing. Data resets on cold start. For production, migrate to Turso (libsql), Supabase, or PlanetScale.
-const { createClient } = require('@libsql/client');
+const { createClient } = require('@libsql/client/web');
 
-// Initialize Turso Client
+// Initialize Turso Client (Using pure HTTP transport web client for serverless compatibility)
 const client = createClient({
-  url: process.env.TURSO_DATABASE_URL || 'file:local.db',
+  url: process.env.TURSO_DATABASE_URL,
   authToken: process.env.TURSO_AUTH_TOKEN
 });
 
