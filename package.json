@@ -1,5 +1,5 @@
 {
-  "name": "sentinel-marketplace-netlify",
+  "name": "watchpost-marketplace",
   "version": "1.0.0",
   "description": "Two-sided security personnel hiring marketplace platform restructured for Netlify Functions",
   "main": "index.js",
@@ -7,6 +7,6 @@
     "build": "echo 'No build step required'"
   },
   "dependencies": {
-    "@libsql/client": "^0.3.5"
+    "@libsql/client": "^0.14.0"
   }
 }
