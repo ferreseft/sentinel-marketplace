@@ -1,4 +1,4 @@
-const { getDB } = require('./db-helper');
+const db = require('./lib/db');
 
 exports.handler = async (event, context) => {
   if (event.httpMethod !== 'GET') {
@@ -6,32 +6,28 @@ exports.handler = async (event, context) => {
   }
   
   try {
-    const db = getDB();
     const serviceType = event.queryStringParameters && event.queryStringParameters.service_type;
     const location = event.queryStringParameters && event.queryStringParameters.location;
     const availability = event.queryStringParameters && event.queryStringParameters.availability;
     
-    let query = "SELECT * FROM security_personnel WHERE profile_status = 'active'";
-    const params = [];
+    let list = db.getPersonnel().filter(p => p.profile_status === 'active');
     
     if (serviceType) {
-      query += " AND service_types LIKE ?";
-      params.push('%' + serviceType + '%');
+      const sType = serviceType.toLowerCase();
+      list = list.filter(p => (p.service_types || "").toLowerCase().includes(sType));
     }
     if (location) {
-      query += " AND service_area LIKE ?";
-      params.push('%' + location + '%');
+      const loc = location.toLowerCase();
+      list = list.filter(p => (p.service_area || "").toLowerCase().includes(loc));
     }
     if (availability) {
-      query += " AND availability_status = ?";
-      params.push(availability);
+      list = list.filter(p => p.availability_status === availability);
     }
     
-    const rows = db.prepare(query).all(params);
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(rows)
+      body: JSON.stringify(list)
     };
   } catch (err) {
     return {

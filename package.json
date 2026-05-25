@@ -6,8 +6,5 @@
   "scripts": {
     "build": "echo 'No build step required'"
   },
-  "dependencies": {
-    "better-sqlite3": "^8.5.2",
-    "nodemailer": "^6.9.1"
-  }
+  "dependencies": {}
 }

@@ -1,4 +1,4 @@
-const { getDB } = require('./db-helper');
+const db = require('./lib/db');
 
 exports.handler = async (event, context) => {
   if (event.httpMethod !== 'GET') {
@@ -6,21 +6,20 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const db = getDB();
     const recipientType = event.queryStringParameters && event.queryStringParameters.recipient_type;
     const recipientId = event.queryStringParameters && event.queryStringParameters.recipient_id;
 
-    let rows;
+    let list = db.getNotifications();
+
     if (recipientType && recipientId) {
-      rows = db.prepare('SELECT * FROM notifications WHERE recipient_type = ? AND recipient_id = ? ORDER BY id DESC').all(recipientType, recipientId);
-    } else {
-      rows = db.prepare('SELECT * FROM notifications ORDER BY id DESC').all();
+      list = list.filter(n => n.recipient_type === recipientType && n.recipient_id === parseInt(recipientId))
+        .sort((a, b) => b.id - a.id);
     }
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(rows)
+      body: JSON.stringify(list)
     };
   } catch (err) {
     return {

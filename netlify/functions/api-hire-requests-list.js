@@ -1,4 +1,4 @@
-const { getDB } = require('./db-helper');
+const db = require('./lib/db');
 
 exports.handler = async (event, context) => {
   if (event.httpMethod !== 'GET') {
@@ -6,14 +6,15 @@ exports.handler = async (event, context) => {
   }
 
   try {
-    const db = getDB();
     const customerId = (event.queryStringParameters && event.queryStringParameters.customer_id) || '1';
-    const rows = db.prepare('SELECT * FROM hire_requests WHERE customer_id = ? ORDER BY id DESC').all(customerId);
+    const list = db.getHireRequests()
+      .filter(r => r.customer_id === parseInt(customerId))
+      .sort((a, b) => b.id - a.id);
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(rows)
+      body: JSON.stringify(list)
     };
   } catch (err) {
     return {
