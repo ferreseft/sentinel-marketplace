@@ -1,0 +1,13 @@
+{
+  "name": "sentinel-marketplace-netlify",
+  "version": "1.0.0",
+  "description": "Two-sided security personnel hiring marketplace platform restructured for Netlify Functions",
+  "main": "index.js",
+  "scripts": {
+    "build": "echo 'No build step required'"
+  },
+  "dependencies": {
+    "better-sqlite3": "^8.5.2",
+    "nodemailer": "^6.9.1"
+  }
+}
